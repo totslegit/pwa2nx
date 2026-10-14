@@ -13,6 +13,34 @@ def generate_title_id(name: str) -> str:
     return f"05{h[:14].lower()}"
 
 
+def validate_npdm_descriptor(npdm_path: str) -> None:
+    with open(npdm_path, "r", encoding="utf-8") as f:
+        data = json.load(f)
+
+    required = {
+        "name": str,
+        "title_id": str,
+        "main_thread_stack_size": int,
+        "main_thread_priority": int,
+        "default_cpu_id": int,
+        "process_category": int,
+        "is_retail": bool,
+        "pool_partition": int,
+        "is_aslr_enabled": bool,
+        "address_space_type": int,
+    }
+
+    for key, expected_type in required.items():
+        if key not in data or not isinstance(data[key], expected_type):
+            raise ValueError(f"Invalid NPDM descriptor field: {key}={data.get(key)!r}")
+
+    if "filesystem_access" not in data or "permissions" not in data["filesystem_access"]:
+        raise ValueError("NPDM descriptor missing filesystem_access.permissions")
+
+    if "kernel_capabilities" not in data or not data["kernel_capabilities"]:
+        raise ValueError("NPDM descriptor missing kernel_capabilities")
+
+
 def main():
     if len(sys.argv) < 3:
         print("Usage: python build_nsp.py <app_name> <safe_name>")
@@ -59,13 +87,40 @@ def main():
         ],
     }
 
-    with open("nsp_build/npdm.json", "w") as f:
+    npdm_path = "nsp_build/npdm.json"
+    with open(npdm_path, "w", encoding="utf-8") as f:
         json.dump(npdm_data, f, indent=2)
+        f.write("\n")
 
-    # Run npdmtool to compile main.npdm
-    subprocess.run(
-        ["npdmtool", "nsp_build/npdm.json", "nsp_build/exefs/main.npdm"], check=True
-    )
+    try:
+        validate_npdm_descriptor(npdm_path)
+        result = subprocess.run(
+            ["npdmtool", npdm_path, "nsp_build/exefs/main.npdm"],
+            check=True,
+            capture_output=True,
+            text=True,
+        )
+        if result.stdout:
+            print(result.stdout)
+        if result.stderr:
+            print(result.stderr)
+    except subprocess.CalledProcessError as exc:
+        print("npdmtool failed.")
+        if exc.stdout:
+            print("STDOUT:")
+            print(exc.stdout)
+        if exc.stderr:
+            print("STDERR:")
+            print(exc.stderr)
+        print("Descriptor contents:")
+        with open(npdm_path, "r", encoding="utf-8") as f:
+            print(f.read())
+        raise
+    except ValueError as exc:
+        print(f"NPDM validation failed: {exc}")
+        with open(npdm_path, "r", encoding="utf-8") as f:
+            print(f.read())
+        raise
 
     # 3. Strip ELF to exefs/main
     subprocess.run(
