@@ -238,7 +238,7 @@ jobs:
 
       - name: Setup NSP Build Tools
         run: |
-          git clone --depth 1 https://github.com/The-4n/hacBrewPack.git
+          git clone --depth 1 https://github.com/pplatoon/hacBrewPack.git
           cd hacBrewPack && make && cp hacbrewpack /usr/local/bin/ && cd ..
           if [ "${{ secrets.PROD_KEYS }}" != "" ]; then
             mkdir -p ~/.switch
